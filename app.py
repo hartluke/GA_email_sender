@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import pandas as pd
@@ -12,22 +13,24 @@ script_thread = None
 class ScriptThread(QThread):
     finished = pyqtSignal(int)
 
-    def __init__(self, script_func, input_path, output_path, dir):
+    def __init__(self, script_func, input_path, output_path, config, dir):
         super().__init__()
         self.script_func = script_func
         self.input_path = input_path
         self.output_path = output_path
+        self.config = config
         self.dir = dir
 
     def run(self):
         try:
-            return_code = self.script_func(self, self.input_path, self.output_path, self.dir)
+            return_code = self.script_func(self, self.input_path, self.output_path, self.config, self.dir)
             self.finished.emit(return_code)
         except Exception as e:
             logging.error(f"Error while executing script: {str(e)}")
             self.finished.emit(1)
             
 class MainWindow(QMainWindow):
+
     def __init__(self):
         super().__init__()
 
@@ -35,11 +38,11 @@ class MainWindow(QMainWindow):
             base_path = os.path.dirname(sys.executable)
         else:
             base_path = os.path.abspath(__file__)
-        dir = os.path.dirname(base_path)
+        self.dir = os.path.dirname(base_path)
         
-        self.setWindowTitle('Script Runner')
+        self.setWindowTitle('General Accounting Email Sender')
         self.setFixedWidth(700)
-        self.setWindowIcon(QIcon(f'{dir}\\src\\assets\\logo.png'))
+        self.setWindowIcon(QIcon(f'{self.dir}\\src\\assets\\logo.png'))
         self.layout = QVBoxLayout()
         
         # styling
@@ -52,7 +55,7 @@ class MainWindow(QMainWindow):
         app.setPalette(palette)
 
         # information text at top of app
-        with open(f'{dir}\\src\\assets\\info.html', 'r') as file:
+        with open(f'{self.dir}\\src\\assets\\info.html', 'r') as file:
             info_html_content = file.read()
         info_html = QLabel()
         info_html.setText(info_html_content)
@@ -73,9 +76,21 @@ class MainWindow(QMainWindow):
         self.output_is_file = False
 
         button_font = QFont("slab serif", 9)
+
+        # template selection
+        template_label = QLabel('Email Template')
+        self.template_combo = QComboBox()
+
+        with open(f'{self.dir}\\src\\config\\config.json', 'r', encoding="utf8") as file:
+            config = json.load(file)
+            templates = [template['template_name'] for template in config['templates']]
+            self.template_combo.addItems(templates)
+
+        self.layout.addWidget(template_label)
+        self.layout.addWidget(self.template_combo)
+
         if self.show_input:
             if self.input_is_file:
-                # Input for Outstanding Charges
                 input_label = QLabel('Input File')
                 self.input_field = QLineEdit()
                 input_button = QPushButton('Browse')
@@ -133,7 +148,7 @@ class MainWindow(QMainWindow):
         self.layout.addWidget(self.run_button)
         self.layout.addWidget(exit_button)
 
-        self.loading_gif = QMovie(f'{dir}\\src\\assets\\pacman_loading.gif')
+        self.loading_gif = QMovie(f'{self.dir}\\src\\assets\\pacman_loading.gif')
         self.loading_dialog = QDialog(self)
         self.loading_dialog.setWindowTitle("Script Running...")
         loading_label = QLabel(self.loading_dialog)
@@ -151,22 +166,27 @@ class MainWindow(QMainWindow):
         self.script_thread = None
 
     def run_script(self):
-        if getattr(sys, 'frozen', False):
-            base_path = os.path.dirname(sys.executable)
-        else:
-            base_path = os.path.abspath(__file__)
-        dir = os.path.dirname(base_path)
+        template, input_path, output_path = None, None, None
 
-        input_path, output_path = None, None
+        template = self.template_combo.currentText()
         if self.show_input:
             input_path = self.input_field.text()
         if self.show_output:
             output_path = self.output_field.text()
             
-        if (self.show_input and not input_path) or (self.show_output and not output_path):
+        if (self.show_input and not input_path) or (self.show_output and not output_path) or not template:
             QMessageBox.warning(self, "Warning", "Please provide all required fields.")
             return
         
+        with open(f'{self.dir}\\src\\config\\config.json', 'r', encoding="utf8") as file:
+            config = json.load(file)
+            template_json = next((t for t in config['templates'] if t['template_name'] == template), None)
+
+        if not input_path.endswith('.xlsx'):
+            self.input_field.clear()
+            QMessageBox.warning(self, "Warning", "Please input an excel file")
+            return
+
         # Configure logging
         now = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
         logging.basicConfig(
@@ -181,7 +201,7 @@ class MainWindow(QMainWindow):
             self.loading_dialog.show()
             self.loading_gif.start()
             logging.info(f'Running Script: {str(script_main)}')
-            self.script_thread = ScriptThread(script_main, input_path, output_path, dir)
+            self.script_thread = ScriptThread(script_main, input_path, output_path, template_json, self.dir)
             self.script_thread.finished.connect(self.script_finished)
             self.script_thread.start()
         except Exception as e:
@@ -194,8 +214,10 @@ class MainWindow(QMainWindow):
 
         if return_code == 0:
             QMessageBox.information(self, "Information", "Script ran successfully!")
+        elif return_code == 2:
+            QMessageBox.critical(self, "Error", "Error creating email, please check that your excel file matches the template you selected.")
         else:
-            QMessageBox.critical(self, "Error", "Script finished running with errors")
+            QMessageBox.critical(self, "Error", "Script finished running with errors.")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

@@ -1,0 +1,17 @@
+{
+    "templates": [
+        {
+            "template_name": "Foundation & PD Project Certification",
+            "template_file": "foundation_PD.html",
+            "subject": "{name} FY24 Foundation & PD Project Certification",
+            "variables": {
+                "project": {"column": "Project by Name", "type": "str", "format": "{}"},
+                "budget": {"column": "FY24 Beginning Balance / Budget", "type": "float", "format": "$ {:,.2f}"},
+                "revenue": {"column": "Revenue", "type": "float", "format": "$ {:,.2f}"},
+                "expenses": {"column": "Expenses", "type": "float", "format": "$ {:,.2f}"},
+                "transfers": {"column": "Total Transfers", "type": "float", "format": "$ {:,.2f}"},
+                "balance": {"column": "FY24 Ending Balance", "type": "float", "format": "$ {:,.2f}"}
+            }
+        }
+    ]
+}
